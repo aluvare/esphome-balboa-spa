@@ -54,7 +54,13 @@ namespace esphome
             }
 
             // Check if we've reached the target state
-            if (jet_state == target_state)
+            // For ON (target=1): accept any non-zero state as success.
+            // 1-speed pumps cycle 0->2->0 (skipping state 1), so state 2
+            // must be accepted as "ON" to prevent futile re-toggle oscillation.
+            bool reached = (target_state == 0) ? (jet_state == 0)
+                         : (target_state == 1) ? (jet_state > 0)
+                         :                       (jet_state == target_state);
+            if (reached)
             {
                 this->desired_state = ToggleStateMaybe::DONT_KNOW;
                 this->toggle_attempts = 0;
@@ -104,9 +110,14 @@ namespace esphome
         {
             int current_state = static_cast<int>(current_jet_state);
 
-            if (current_state == target_state)
+            // Same logic as update_toggle_state: for ON (target=1),
+            // accept any non-zero state as already at target.
+            bool already_there = (target_state == 0) ? (current_state == 0)
+                               : (target_state == 1) ? (current_state > 0)
+                               :                       (current_state == target_state);
+            if (already_there)
             {
-                ESP_LOGD(tag, "Spa/%s: already at target state %d", jet_name, target_state);
+                ESP_LOGD(tag, "Spa/%s: already at target state %d (current=%d)", jet_name, target_state, current_state);
                 return;
             }
 
