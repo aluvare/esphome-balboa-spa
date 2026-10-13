@@ -13,6 +13,7 @@ FaultLogTimeTextSensor = balboa_spa_ns.class_("FaultLogTimeTextSensor", text_sen
 ReminderTextSensor = balboa_spa_ns.class_("ReminderTextSensor", text_sensor.TextSensor)
 ComponentVersionTextSensor = balboa_spa_ns.class_("ComponentVersionTextSensor", text_sensor.TextSensor)
 SpaConfigTextSensor = balboa_spa_ns.class_("SpaConfigTextSensor", text_sensor.TextSensor)
+SpaInitModeTextSensor = balboa_spa_ns.class_("SpaInitModeTextSensor", text_sensor.TextSensor)
 
 CONF_SPA_TIME = "spa_time"
 CONF_FILTER1_CONFIG = "filter1_config"
@@ -22,6 +23,7 @@ CONF_FAULT_LOG_TIME = "fault_log_time"
 CONF_REMINDER = "reminder"
 CONF_COMPONENT_VERSION = "component_version"
 CONF_SPA_CONFIG = "spa_config"
+CONF_INIT_MODE = "init_mode"
 
 CONFIG_SCHEMA = cv.Schema({
     cv.GenerateID(CONF_SPA_ID): cv.use_id(BalboaSpa),
@@ -35,6 +37,11 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Optional(CONF_SPA_CONFIG): text_sensor.text_sensor_schema(
         SpaConfigTextSensor,
         icon="mdi:information-outline",
+        entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+    ),
+    cv.Optional(CONF_INIT_MODE): text_sensor.text_sensor_schema(
+        SpaInitModeTextSensor,
+        icon="mdi:alert-circle-outline",
         entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
     ),
 })
@@ -63,5 +70,8 @@ async def to_code(config):
         var = await text_sensor.new_text_sensor(conf)
         cg.add(var.set_parent(parent))
     if conf := config.get(CONF_SPA_CONFIG):
+        var = await text_sensor.new_text_sensor(conf)
+        cg.add(var.set_parent(parent))
+    if conf := config.get(CONF_INIT_MODE):
         var = await text_sensor.new_text_sensor(conf)
         cg.add(var.set_parent(parent))
