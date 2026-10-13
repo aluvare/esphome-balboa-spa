@@ -149,6 +149,9 @@ namespace esphome
       void ID_ack();
       void rs485_send();
       void print_msg(CircularBuffer<uint8_t, 100> &data);
+      // Seeds target_filter* from the last schedule reported by the spa and
+      // refuses the write if none has been received yet.
+      bool prepare_filter_write();
       void decodeSettings();
       void decodeState();
       bool accept_current_temp(float temp_c);

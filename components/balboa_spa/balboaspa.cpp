@@ -188,6 +188,13 @@ namespace esphome
         void BalboaSpa::request_config_update()
         {
             ESP_LOGD(TAG, "Requesting spa config update");
+            // Rearm the retry budget. config_retries is only cleared in
+            // decodeSettings(), i.e. when an answer actually arrives. After the
+            // initial 3 attempts have been spent the counter stays at 3, so an
+            // explicit request would get a single attempt and then give up for
+            // good until the ESP reboots.
+            config_retries = 0;
+            config_response_timer = 0;
             config_request_status = 0; // Reset to request config again
         }
 
@@ -200,6 +207,11 @@ namespace esphome
         void BalboaSpa::request_fault_log_update()
         {
             ESP_LOGD(TAG, "Requesting spa fault log update");
+            // Same rearm as request_config_update(): faultlog_retries is only
+            // cleared once a fault log answer is decoded, so without this an
+            // explicit request after the initial giving-up gets one attempt.
+            faultlog_retries = 0;
+            faultlog_response_timer = 0;
             faultlog_request_status = 0; // Reset to request fault log again
         }
 
@@ -240,10 +252,39 @@ namespace esphome
             }
         }
 
+        bool BalboaSpa::prepare_filter_write()
+        {
+            // The 0x23 payload always carries BOTH filter schedules, so a
+            // setter that only changes one field still transmits the other
+            // seven. target_filter* start at zero and were never seeded from
+            // the spa's answer, so writing before the schedule has been read
+            // wipes the spa's real filter times (e.g. disabling Filter 2 after
+            // a reboot would set Filter 1 to 00:00/00:00).
+            if (spaFilterSettings.valid == 0)
+            {
+                ESP_LOGW(TAG, "Filter write refused: spa has not reported its filter schedule yet");
+                request_filter_settings_update();
+                return false;
+            }
+
+            target_filter1_start_hour = spaFilterSettings.filter1_hour;
+            target_filter1_start_minute = spaFilterSettings.filter1_minute;
+            target_filter1_duration_hour = spaFilterSettings.filter1_duration_hour;
+            target_filter1_duration_minute = spaFilterSettings.filter1_duration_minute;
+            target_filter2_start_hour = spaFilterSettings.filter2_hour;
+            target_filter2_start_minute = spaFilterSettings.filter2_minute;
+            target_filter2_duration_hour = spaFilterSettings.filter2_duration_hour;
+            target_filter2_duration_minute = spaFilterSettings.filter2_duration_minute;
+            target_filter2_enable = spaFilterSettings.filter2_enable;
+            return true;
+        }
+
         void BalboaSpa::set_filter2_config(uint8_t start_hour, uint8_t start_minute, uint8_t duration_hour, uint8_t duration_minute)
         {
             if (start_hour < 24 && start_minute < 60 && duration_hour < 24 && duration_minute < 60)
             {
+                if (!prepare_filter_write())
+                    return;
                 target_filter2_start_hour = start_hour;
                 target_filter2_start_minute = start_minute;
                 target_filter2_duration_hour = duration_hour;
@@ -255,6 +296,8 @@ namespace esphome
 
         void BalboaSpa::disable_filter2()
         {
+            if (!prepare_filter_write())
+                return;
             target_filter2_enable = false;
             send_command = 0x25; // Filter configuration command
         }
@@ -263,6 +306,8 @@ namespace esphome
         {
             if (hour < 24 && minute < 60)
             {
+                if (!prepare_filter_write())
+                    return;
                 target_filter1_start_hour = hour;
                 target_filter1_start_minute = minute;
                 send_command = 0x25; // Filter configuration command
@@ -274,6 +319,8 @@ namespace esphome
         {
             if (hour < 24 && minute < 60)
             {
+                if (!prepare_filter_write())
+                    return;
                 target_filter1_duration_hour = hour;
                 target_filter1_duration_minute = minute;
                 send_command = 0x25; // Filter configuration command
@@ -285,6 +332,8 @@ namespace esphome
         {
             if (hour < 24 && minute < 60)
             {
+                if (!prepare_filter_write())
+                    return;
                 target_filter2_start_hour = hour;
                 target_filter2_start_minute = minute;
                 target_filter2_enable = true;
@@ -297,6 +346,8 @@ namespace esphome
         {
             if (hour < 24 && minute < 60)
             {
+                if (!prepare_filter_write())
+                    return;
                 target_filter2_duration_hour = hour;
                 target_filter2_duration_minute = minute;
                 target_filter2_enable = true;
@@ -661,17 +712,24 @@ namespace esphome
 
         void BalboaSpa::print_msg(CircularBuffer<uint8_t, 100> &data)
         {
-            std::stringstream debug_stream;
-            // for (loop_index = 0; loop_index < (input_queue[1] + 2); loop_index++) {
-            for (loop_index = 0; loop_index < data.size(); loop_index++)
+            // Compiled out entirely unless the build allows VERY_VERBOSE:
+            // building the hex string costs heap and CPU on every frame, and
+            // before this the formatted result was thrown away without ever
+            // being logged.
+#if ESPHOME_LOG_LEVEL >= ESPHOME_LOG_LEVEL_VERY_VERBOSE
+            // Use a local index/byte: the member fields are part of the parser
+            // state and clobbering them from a debug helper corrupts framing.
+            std::string out;
+            out.reserve(data.size() * 3);
+            char hex[4];
+            for (decltype(data.size()) i = 0; i < data.size(); i++)
             {
-                received_byte = data[loop_index];
-                if (received_byte < 0x0A)
-                    debug_stream << "0";
-                debug_stream << std::hex << received_byte;
-                debug_stream << " ";
+                snprintf(hex, sizeof(hex), "%02X ", data[i]);
+                out += hex;
             }
+            ESP_LOGVV(TAG, "frame: %s", out.c_str());
             yield();
+#endif
         }
 
         void BalboaSpa::decodeSettings()
@@ -956,6 +1014,7 @@ namespace esphome
             spaFilterSettings.filter2_minute = input_queue[10];
             spaFilterSettings.filter2_duration_hour = input_queue[11];
             spaFilterSettings.filter2_duration_minute = input_queue[12];
+            spaFilterSettings.valid = 1;
 
             // Filter 1 time conversion
             static PROGMEM const char *format_string = R"({"start":"%.2i:%.2i","duration":"%.2i:%.2i"} )";

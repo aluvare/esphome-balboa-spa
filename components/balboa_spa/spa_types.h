@@ -21,6 +21,16 @@ namespace esphome
 
         struct SpaFilterSettings
         {
+            // Zero initialised, and `valid` stays 0 until the spa has actually
+            // reported its filter schedule. Writers must not build a 0x23
+            // payload from these fields before that, or they would overwrite
+            // the spa's real schedule with zeros.
+            SpaFilterSettings()
+                : filter1_hour(0), filter1_minute(0), filter1_duration_hour(0),
+                  filter1_duration_minute(0), filter2_enable(0), filter2_hour(0),
+                  filter2_minute(0), filter2_duration_hour(0),
+                  filter2_duration_minute(0), valid(0) {}
+
             uint8_t filter1_hour : 5;
             uint8_t filter1_minute : 6;
             uint8_t filter1_duration_hour : 5;
@@ -30,6 +40,7 @@ namespace esphome
             uint8_t filter2_minute : 6;
             uint8_t filter2_duration_hour : 5;
             uint8_t filter2_duration_minute : 6;
+            uint8_t valid : 1; // 1 once the spa has reported the filter schedule
         };
 
         enum ToggleStateMaybe
