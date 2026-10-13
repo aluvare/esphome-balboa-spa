@@ -26,6 +26,7 @@ class SpaState {
             target_temp = NAN;
             current_temp = NAN;
             reminder = 0;
+            init_mode = 255; // 255 = not received yet (0x00 is a valid "Idle")
         }
         uint8_t jet1 :2;
         uint8_t jet2 :2;
@@ -44,6 +45,9 @@ class SpaState {
         float target_temp;
         float current_temp;
         uint8_t reminder;
+        // Initialization Mode (status update argument 1): 0x02 means the spa is
+        // in a fault state. 255 until the first status message is decoded.
+        uint8_t init_mode;
 };
 }  // namespace balboa_spa
 }  // namespace esphome

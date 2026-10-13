@@ -9,7 +9,12 @@ namespace esphome
         static const char *CRC_TAG = "BalboaSpa.CRC";
 
         // Protocol byte indices for status update (0x13) message
-        static const uint8_t STATUS_UPDATE_REMINDER_BYTE = 6;
+        // Status update (0x13) argument offsets. Argument N of the protocol
+        // documentation lives at input_queue[N + 5]: byte 0 is the delimiter,
+        // 1 length, 2 channel, 3 0xAF/0xBF, 4 type code.
+        // Argument 1 = Initialization Mode, argument 6 = Reminder Type.
+        static const uint8_t STATUS_UPDATE_INIT_MODE_BYTE = 6;  // argument 1
+        static const uint8_t STATUS_UPDATE_REMINDER_BYTE = 11; // argument 6
         static const uint8_t CLEANUP_CYCLE_ACTIVE_VALUE = 0x0C;
 
         void BalboaSpa::setup()
@@ -989,13 +994,26 @@ namespace esphome
                 spaState.cleanup_cycle = spa_component_state;
             }
 
-            // Parse reminder type from byte 6 of the status update (0x13 message)
+            // Parse reminder type from argument 6 of the status update (0x13)
             // 0x00=None, 0x04=Clean filter, 0x0A=Check pH, 0x09=Check sanitizer, 0x1E=Fault
             uint8_t reminder_value = input_queue[STATUS_UPDATE_REMINDER_BYTE];
             if (reminder_value != spaState.reminder)
             {
                 ESP_LOGD(TAG, "Spa/reminder/state: 0x%02X", reminder_value);
                 spaState.reminder = reminder_value;
+            }
+
+            // Parse initialization mode from argument 1 of the status update.
+            // This was previously read as the reminder type, which reported the
+            // spa's fault state as "Unknown (0x02)" on the reminder sensor and
+            // left the real reminder byte unread.
+            // 0x00=Idle, 0x01=Priming, 0x02=Fault, 0x03=Reminder,
+            // 0x04=Stage 1, 0x05=Stage 3, 0x42=Stage 2
+            uint8_t init_mode_value = input_queue[STATUS_UPDATE_INIT_MODE_BYTE];
+            if (init_mode_value != spaState.init_mode)
+            {
+                ESP_LOGI(TAG, "Spa/init_mode/state: 0x%02X", init_mode_value);
+                spaState.init_mode = init_mode_value;
             }
 
             // TODO: callback on newState
